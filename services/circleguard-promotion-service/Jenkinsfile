@@ -5,6 +5,16 @@ pipeline {
 apiVersion: v1
 kind: Pod
 spec:
+  initContainers:
+  - name: wait-for-docker
+    image: docker:24.0.5-cli
+    command: ['sh', '-c', 'until docker info > /dev/null 2>&1; do echo waiting for docker; sleep 2; done']
+    env:
+    - name: DOCKER_HOST
+      value: unix:///var/run/docker.sock
+    volumeMounts:
+    - name: docker-sock
+      mountPath: /var/run
   containers:
   - name: jnlp
     image: jenkins/inbound-agent:latest
@@ -24,6 +34,9 @@ spec:
     env:
     - name: DOCKER_HOST
       value: unix:///var/run/docker.sock
+    volumeMounts:
+    - name: docker-sock
+      mountPath: /var/run
   volumes:
   - name: docker-sock
     emptyDir: {}
@@ -42,10 +55,7 @@ spec:
       steps {
         container('gradle') {
           sh '''
-            # Instalar docker client si es necesario para Testcontainers
             apk add --no-cache docker-cli
-            
-            # Ejecutar tests
             ./gradlew :services:circleguard-promotion-service:test --info
           '''
         }
@@ -79,13 +89,10 @@ spec:
       steps {
         container('gradle') {
           sh """
-            # Instalar curl y kubectl
             apk add --no-cache curl
             curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl"
             chmod +x kubectl
             mv kubectl /usr/local/bin/kubectl
-            
-            # Desplegar en GKE
             kubectl set image deployment/promotion-service promotion-service=${DOCKER_IMAGE}:dev-${BUILD_NUMBER} -n ${NAMESPACE}
             kubectl rollout status deployment/promotion-service -n ${NAMESPACE}
           """
