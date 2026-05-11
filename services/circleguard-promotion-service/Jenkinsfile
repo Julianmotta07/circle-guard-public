@@ -21,6 +21,9 @@ spec:
   - name: gradle
     image: eclipse-temurin:21-jdk-alpine
     command: ['sh', '-c', 'sleep 99d']
+    env:
+    - name: DOCKER_HOST
+      value: unix:///var/run/docker.sock
   volumes:
   - name: docker-sock
     emptyDir: {}
@@ -38,7 +41,13 @@ spec:
     stage('Unit Tests') {
       steps {
         container('gradle') {
-          sh './gradlew :services:circleguard-promotion-service:test'
+          sh '''
+            # Instalar docker client si es necesario para Testcontainers
+            apk add --no-cache docker-cli
+            
+            # Ejecutar tests
+            ./gradlew :services:circleguard-promotion-service:test --info
+          '''
         }
       }
       post { always {
@@ -70,10 +79,8 @@ spec:
       steps {
         container('gradle') {
           sh """
-            # Instalar curl primero (la imagen alpine no lo trae)
+            # Instalar curl y kubectl
             apk add --no-cache curl
-            
-            # Instalar kubectl
             curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl"
             chmod +x kubectl
             mv kubectl /usr/local/bin/kubectl
