@@ -12,9 +12,6 @@ spec:
     image: docker:24.0.5-dind
     securityContext:
       privileged: true
-    volumeMounts:
-    - name: docker-sock
-      mountPath: /var/run
     env:
     - name: DOCKER_TLS_CERTDIR
       value: ""
@@ -23,13 +20,11 @@ spec:
     command: ['sh', '-c', 'sleep 99d']
     env:
     - name: DOCKER_HOST
-      value: unix:///var/run/docker.sock
-    volumeMounts:
-    - name: docker-sock
-      mountPath: /var/run
-  volumes:
-  - name: docker-sock
-    emptyDir: {}
+      value: tcp://localhost:2375
+    - name: TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE
+      value: /var/run/docker.sock
+    - name: TESTCONTAINERS_HOST_OVERRIDE
+      value: localhost
 """
     }
   }
