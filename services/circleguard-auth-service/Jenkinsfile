@@ -69,7 +69,7 @@ spec:
     stage('Deploy to DEV') {
       steps {
         container('gradle') {
-          sh '''
+          sh """
             # Instalar curl primero (la imagen alpine no lo trae)
             apk add --no-cache curl
             
@@ -79,9 +79,9 @@ spec:
             mv kubectl /usr/local/bin/kubectl
             
             # Desplegar en GKE
-            kubectl set image deployment/auth-service auth-service='''$DOCKER_IMAGE''':dev-${BUILD_NUMBER} -n $NAMESPACE
-            kubectl rollout status deployment/auth-service -n $NAMESPACE
-          '''
+            kubectl set image deployment/auth-service auth-service=${DOCKER_IMAGE}:dev-${BUILD_NUMBER} -n ${NAMESPACE}
+            kubectl rollout status deployment/auth-service -n ${NAMESPACE}
+          """
         }
       }
     }
