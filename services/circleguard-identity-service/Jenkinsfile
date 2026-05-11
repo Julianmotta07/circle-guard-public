@@ -25,18 +25,18 @@ pipeline {
       steps {
         withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials',
           usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-          sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
-          sh 'docker build -t $DOCKER_IMAGE:dev-${BUILD_NUMBER} -f services/circleguard-identity-service/Dockerfile .'
-          sh 'docker push $DOCKER_IMAGE:dev-${BUILD_NUMBER}'
-          sh 'docker tag $DOCKER_IMAGE:dev-${BUILD_NUMBER} $DOCKER_IMAGE:latest'
-          sh 'docker push $DOCKER_IMAGE:latest'
+          sh '/tmp/docker login -u $DOCKER_USER -p $DOCKER_PASS'
+          sh '/tmp/docker build -t $DOCKER_IMAGE:dev-${BUILD_NUMBER} -f services/circleguard-identity-service/Dockerfile .'
+          sh '/tmp/docker push $DOCKER_IMAGE:dev-${BUILD_NUMBER}'
+          sh '/tmp/docker tag $DOCKER_IMAGE:dev-${BUILD_NUMBER} $DOCKER_IMAGE:latest'
+          sh '/tmp/docker push $DOCKER_IMAGE:latest'
         }
       }
     }
     stage('Deploy to DEV') {
       steps {
-        sh 'kubectl set image deployment/identity-service identity-service=$DOCKER_IMAGE:dev-${BUILD_NUMBER} -n $NAMESPACE'
-        sh 'kubectl rollout status deployment/identity-service -n $NAMESPACE'
+        sh '/tmp/kubectl set image deployment/identity-service identity-service=$DOCKER_IMAGE:dev-${BUILD_NUMBER} -n $NAMESPACE'
+        sh '/tmp/kubectl rollout status deployment/identity-service -n $NAMESPACE'
       }
     }
   }

@@ -25,17 +25,17 @@ pipeline {
       steps {
         withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials',
           usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-          sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
-          sh 'docker build -t $DOCKER_IMAGE:stage-${BUILD_NUMBER} -f services/circleguard-form-service/Dockerfile .'
-          sh 'docker push $DOCKER_IMAGE:stage-${BUILD_NUMBER}'
+          sh '/tmp/docker login -u $DOCKER_USER -p $DOCKER_PASS'
+          sh '/tmp/docker build -t $DOCKER_IMAGE:stage-${BUILD_NUMBER} -f services/circleguard-form-service/Dockerfile .'
+          sh '/tmp/docker push $DOCKER_IMAGE:stage-${BUILD_NUMBER}'
         }
       }
     }
     stage('Deploy to STAGE') {
       steps {
-        sh 'kubectl apply -f services/circleguard-form-service/k8s/ -n $NAMESPACE'
-        sh 'kubectl set image deployment/form-service form-service=$DOCKER_IMAGE:stage-${BUILD_NUMBER} -n $NAMESPACE'
-        sh 'kubectl rollout status deployment/form-service -n $NAMESPACE'
+        sh '/tmp/kubectl apply -f services/circleguard-form-service/k8s/ -n $NAMESPACE'
+        sh '/tmp/kubectl set image deployment/form-service form-service=$DOCKER_IMAGE:stage-${BUILD_NUMBER} -n $NAMESPACE'
+        sh '/tmp/kubectl rollout status deployment/form-service -n $NAMESPACE'
       }
     }
     stage('Integration Tests') {
