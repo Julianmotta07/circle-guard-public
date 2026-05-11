@@ -1,6 +1,7 @@
 package com.circleguard.promotion.service;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -12,7 +13,6 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.Neo4jContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -48,55 +48,44 @@ public class HealthStatusReevaluationTest {
 
     @Test
     void testSingleRelease() {
-        // A (CONFIRMED) -[r1]-> B (SUSPECT)
         createNode("A", "CONFIRMED");
         createNode("B", "SUSPECT");
         createRelationship("A", "B");
 
-        // Resolve A
         healthStatusService.resolveStatus("A");
 
-        // B should become ACTIVE
         assertEquals("ACTIVE", getStatus("B"));
     }
 
     @Test
     void testBlockedRelease() {
-        // A (CONFIRMED) -[r1]-> B (SUSPECT) <-[r2]- C (CONFIRMED)
         createNode("A", "CONFIRMED");
         createNode("B", "SUSPECT");
         createNode("C", "CONFIRMED");
         createRelationship("A", "B");
         createRelationship("C", "B");
 
-        // Resolve A
         healthStatusService.resolveStatus("A");
 
-        // B should stay SUSPECT because of C
         assertEquals("SUSPECT", getStatus("B"));
     }
 
     @Test
     void testMultiHopRelease() {
-        // A (CONFIRMED) -> B (SUSPECT) -> C (PROBABLE)
         createNode("A", "CONFIRMED");
         createNode("B", "SUSPECT");
         createNode("C", "PROBABLE");
         createRelationship("A", "B");
         createRelationship("B", "C");
 
-        // Resolve A
         healthStatusService.resolveStatus("A");
 
-        // Both B and C should become ACTIVE
         assertEquals("ACTIVE", getStatus("B"));
         assertEquals("ACTIVE", getStatus("C"));
     }
 
     @Test
     void testPartialReleaseInMesh() {
-        // A (CONFIRMED) -> B (SUSPECT) -> C (PROBABLE)
-        // D (SUSPECT) -> C (PROBABLE)
         createNode("A", "CONFIRMED");
         createNode("B", "SUSPECT");
         createNode("C", "PROBABLE");
@@ -105,12 +94,9 @@ public class HealthStatusReevaluationTest {
         createRelationship("B", "C");
         createRelationship("D", "C");
 
-        // Resolve A
         healthStatusService.resolveStatus("A");
 
-        // B becomes ACTIVE
         assertEquals("ACTIVE", getStatus("B"));
-        // C stays PROBABLE because of D
         assertEquals("PROBABLE", getStatus("C"));
     }
 
