@@ -1,0 +1,22 @@
+spring:
+  kafka:
+    bootstrap-servers: kafka.circle-guard-dev.svc.cluster.local:9092
+    consumer:
+      group-id: notification-test-group
+      auto-offset-reset: earliest
+  mail:
+    host: mailhog.circle-guard-dev.svc.cluster.local
+    port: 1025
+
+jwt:
+  secret: "miSuperClaveSeguraDe32CaracteresLarga"
+
+auth:
+  api:
+    url: http://auth-service.circle-guard-dev.svc.cluster.local:8180
+
+testcontainers:
+  reuse:
+    enable: false
+
+spring.main.allow-bean-definition-overriding: true
