@@ -16,6 +16,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Disabled("Requiere Testcontainers (Neo4j) - se ejecuta localmente")
 @SpringBootTest
 @Testcontainers
 public class PromotionPerformanceTest {

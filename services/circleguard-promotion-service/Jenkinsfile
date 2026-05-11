@@ -39,11 +39,8 @@ spec:
       steps {
         container('gradle') {
           sh '''
-            # Ejecutar tests excluyendo los que requieren Testcontainers/Docker
-            ./gradlew :services:circleguard-promotion-service:test \
-              --tests "!*.performance.*" \
-              --tests "!*.service.AdministrativeCorrectionTest" \
-              --tests "!*.service.HealthStatusReevaluationTest"
+            # Ejecutar todos los tests (los que requieren Docker están anotados con @Disabled)
+            SPRING_PROFILES_ACTIVE=test ./gradlew :services:circleguard-promotion-service:test
           '''
         }
       }

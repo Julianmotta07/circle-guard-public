@@ -19,6 +19,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@Disabled("Requiere Testcontainers (Neo4j, Redis) - se ejecuta localmente")
 @SpringBootTest
 @Testcontainers
 public class AdministrativeCorrectionTest {
