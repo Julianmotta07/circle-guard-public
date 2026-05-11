@@ -1,5 +1,32 @@
 pipeline {
-  agent any
+  agent {
+    kubernetes {
+      yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: jnlp
+    image: jenkins/inbound-agent:latest
+  - name: docker
+    image: docker:24.0.5-dind
+    securityContext:
+      privileged: true
+    volumeMounts:
+    - name: docker-sock
+      mountPath: /var/run
+    env:
+    - name: DOCKER_TLS_CERTDIR
+      value: ""
+  - name: gradle
+    image: eclipse-temurin:21-jdk-alpine
+    command: ['sh', '-c', 'sleep 99d']
+  volumes:
+  - name: docker-sock
+    emptyDir: {}
+"""
+    }
+  }
   environment {
     DOCKER_IMAGE = 'julianmotta07/circle-guard-gateway'
     NAMESPACE   = 'circle-guard-dev'
@@ -10,7 +37,9 @@ pipeline {
     }
     stage('Unit Tests') {
       steps {
-        sh './gradlew :services:circleguard-gateway-service:test'
+        container('gradle') {
+          sh './gradlew :services:circleguard-gateway-service:test'
+        }
       }
       post { always {
         junit '**/build/test-results/test/*.xml'
@@ -18,25 +47,42 @@ pipeline {
     }
     stage('Build JAR') {
       steps {
-        sh './gradlew :services:circleguard-gateway-service:bootJar -x test'
+        container('gradle') {
+          sh './gradlew :services:circleguard-gateway-service:bootJar -x test'
+        }
       }
     }
     stage('Build & Push Docker') {
       steps {
-        withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials',
-          usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-          sh '/tmp/docker login -u $DOCKER_USER -p $DOCKER_PASS'
-          sh '/tmp/docker build -t $DOCKER_IMAGE:dev-${BUILD_NUMBER} -f services/circleguard-gateway-service/Dockerfile .'
-          sh '/tmp/docker push $DOCKER_IMAGE:dev-${BUILD_NUMBER}'
-          sh '/tmp/docker tag $DOCKER_IMAGE:dev-${BUILD_NUMBER} $DOCKER_IMAGE:latest'
-          sh '/tmp/docker push $DOCKER_IMAGE:latest'
+        container('docker') {
+          withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials',
+            usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+            sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
+            sh 'docker build -t $DOCKER_IMAGE:dev-${BUILD_NUMBER} -f services/circleguard-gateway-service/Dockerfile .'
+            sh 'docker push $DOCKER_IMAGE:dev-${BUILD_NUMBER}'
+            sh 'docker tag $DOCKER_IMAGE:dev-${BUILD_NUMBER} $DOCKER_IMAGE:latest'
+            sh 'docker push $DOCKER_IMAGE:latest'
+          }
         }
       }
     }
     stage('Deploy to DEV') {
       steps {
-        sh '/tmp/kubectl set image deployment/gateway-service gateway-service=$DOCKER_IMAGE:dev-${BUILD_NUMBER} -n $NAMESPACE'
-        sh '/tmp/kubectl rollout status deployment/gateway-service -n $NAMESPACE'
+        container('gradle') {
+          sh """
+            # Instalar curl primero (la imagen alpine no lo trae)
+            apk add --no-cache curl
+            
+            # Instalar kubectl
+            curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl"
+            chmod +x kubectl
+            mv kubectl /usr/local/bin/kubectl
+            
+            # Desplegar en GKE
+            kubectl set image deployment/gateway-service gateway-service=${DOCKER_IMAGE}:dev-${BUILD_NUMBER} -n ${NAMESPACE}
+            kubectl rollout status deployment/gateway-service -n ${NAMESPACE}
+          """
+        }
       }
     }
   }
