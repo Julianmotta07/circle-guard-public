@@ -1,0 +1,54 @@
+pipeline {
+  agent any
+  environment {
+    DOCKER_IMAGE = 'julianmotta07/circle-guard-identity'
+    NAMESPACE   = 'circle-guard-stage'
+  }
+  stages {
+    stage('Checkout') {
+      steps { checkout scm }
+    }
+    stage('Unit Tests') {
+      steps {
+        sh './gradlew :services:circleguard-identity-service:test'
+      }
+      post { always {
+        junit '**/build/test-results/test/*.xml'
+      }}
+    }
+    stage('Build JAR') {
+      steps {
+        sh './gradlew :services:circleguard-identity-service:bootJar -x test'
+      }
+    }
+    stage('Build & Push Docker') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials',
+          usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+          sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
+          sh 'docker build -t $DOCKER_IMAGE:stage-${BUILD_NUMBER} -f services/circleguard-identity-service/Dockerfile .'
+          sh 'docker push $DOCKER_IMAGE:stage-${BUILD_NUMBER}'
+        }
+      }
+    }
+    stage('Deploy to STAGE') {
+      steps {
+        sh 'kubectl apply -f services/circleguard-identity-service/k8s/ -n $NAMESPACE'
+        sh 'kubectl set image deployment/identity-service identity-service=$DOCKER_IMAGE:stage-${BUILD_NUMBER} -n $NAMESPACE'
+        sh 'kubectl rollout status deployment/identity-service -n $NAMESPACE'
+      }
+    }
+    stage('Integration Tests') {
+      steps {
+        sh './gradlew :services:circleguard-identity-service:test -Dspring.profiles.active=integration'
+      }
+      post { always {
+        junit '**/build/test-results/test/*.xml'
+      }}
+    }
+  }
+  post {
+    success { echo 'Pipeline STAGE identity-service completado exitosamente' }
+    failure { echo 'Pipeline STAGE identity-service fallido' }
+  }
+}
