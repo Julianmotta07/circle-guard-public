@@ -21,6 +21,9 @@ spec:
   - name: gradle
     image: eclipse-temurin:21-jdk-alpine
     command: ['sleep', '99d']
+  - name: kubectl
+    image: bitnami/kubectl:latest
+    command: ['sleep', '99d']
   volumes:
   - name: docker-sock
     emptyDir: {}
@@ -68,8 +71,13 @@ spec:
     }
     stage('Deploy to DEV') {
       steps {
-        sh '/tmp/kubectl set image deployment/auth-service auth-service=$DOCKER_IMAGE:dev-${BUILD_NUMBER} -n $NAMESPACE'
-        sh '/tmp/kubectl rollout status deployment/auth-service -n $NAMESPACE'
+        container('kubectl') {
+          sh '''#!/bin/bash
+          # Usar kubeconfig desde la credencial configurada
+          kubectl set image deployment/auth-service auth-service=$DOCKER_IMAGE:dev-${BUILD_NUMBER} -n $NAMESPACE
+          kubectl rollout status deployment/auth-service -n $NAMESPACE
+          '''
+        }
       }
     }
   }
