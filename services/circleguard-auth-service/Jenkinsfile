@@ -1,8 +1,34 @@
 pipeline {
-  agent any
+  agent {
+    kubernetes {
+      yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: jnlp
+    image: jenkins/inbound-agent:latest
+  - name: docker
+    image: docker:24.0.5-dind
+    securityContext:
+      privileged: true
+    volumeMounts:
+    - name: docker-sock
+      mountPath: /var/run
+    env:
+    - name: DOCKER_TLS_CERTDIR
+      value: ""
+  - name: gradle
+    image: eclipse-temurin:21-jdk-alpine
+    command: ['sleep', '99d']
+  volumes:
+  - name: docker-sock
+    emptyDir: {}
+"""
+    }
+  }
   environment {
     DOCKER_IMAGE = 'julianmotta07/circle-guard-auth'
-    SERVICE     = 'circleguard-auth-service'
     NAMESPACE   = 'circle-guard-dev'
   }
   stages {
@@ -11,7 +37,9 @@ pipeline {
     }
     stage('Unit Tests') {
       steps {
-        sh './gradlew :services:circleguard-auth-service:test'
+        container('gradle') {
+          sh './gradlew :services:circleguard-auth-service:test'
+        }
       }
       post { always {
         junit '**/build/test-results/test/*.xml'
@@ -19,18 +47,22 @@ pipeline {
     }
     stage('Build JAR') {
       steps {
-        sh './gradlew :services:circleguard-auth-service:bootJar -x test'
+        container('gradle') {
+          sh './gradlew :services:circleguard-auth-service:bootJar -x test'
+        }
       }
     }
     stage('Build & Push Docker') {
       steps {
-        withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials',
-          usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-          sh '/tmp/docker login -u $DOCKER_USER -p $DOCKER_PASS'
-          sh '/tmp/docker build -t $DOCKER_IMAGE:dev-${BUILD_NUMBER} -f services/circleguard-auth-service/Dockerfile .'
-          sh '/tmp/docker push $DOCKER_IMAGE:dev-${BUILD_NUMBER}'
-          sh '/tmp/docker tag $DOCKER_IMAGE:dev-${BUILD_NUMBER} $DOCKER_IMAGE:latest'
-          sh '/tmp/docker push $DOCKER_IMAGE:latest'
+        container('docker') {
+          withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials',
+            usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+            sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
+            sh 'docker build -t $DOCKER_IMAGE:dev-${BUILD_NUMBER} -f services/circleguard-auth-service/Dockerfile .'
+            sh 'docker push $DOCKER_IMAGE:dev-${BUILD_NUMBER}'
+            sh 'docker tag $DOCKER_IMAGE:dev-${BUILD_NUMBER} $DOCKER_IMAGE:latest'
+            sh 'docker push $DOCKER_IMAGE:latest'
+          }
         }
       }
     }
