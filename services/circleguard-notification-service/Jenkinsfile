@@ -1,0 +1,47 @@
+pipeline {
+  agent any
+  environment {
+    DOCKER_IMAGE = 'julianmotta07/circle-guard-notification'
+    NAMESPACE   = 'circle-guard-dev'
+  }
+  stages {
+    stage('Checkout') {
+      steps { checkout scm }
+    }
+    stage('Unit Tests') {
+      steps {
+        sh './gradlew :services:circleguard-notification-service:test'
+      }
+      post { always {
+        junit '**/build/test-results/test/*.xml'
+      }}
+    }
+    stage('Build JAR') {
+      steps {
+        sh './gradlew :services:circleguard-notification-service:bootJar -x test'
+      }
+    }
+    stage('Build & Push Docker') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials',
+          usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+          sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
+          sh 'docker build -t $DOCKER_IMAGE:dev-${BUILD_NUMBER} -f services/circleguard-notification-service/Dockerfile .'
+          sh 'docker push $DOCKER_IMAGE:dev-${BUILD_NUMBER}'
+          sh 'docker tag $DOCKER_IMAGE:dev-${BUILD_NUMBER} $DOCKER_IMAGE:latest'
+          sh 'docker push $DOCKER_IMAGE:latest'
+        }
+      }
+    }
+    stage('Deploy to DEV') {
+      steps {
+        sh 'kubectl set image deployment/notification-service notification-service=$DOCKER_IMAGE:dev-${BUILD_NUMBER} -n $NAMESPACE'
+        sh 'kubectl rollout status deployment/notification-service -n $NAMESPACE'
+      }
+    }
+  }
+  post {
+    success { echo 'Pipeline DEV notification-service completado exitosamente' }
+    failure { echo 'Pipeline DEV notification-service fallido' }
+  }
+}
