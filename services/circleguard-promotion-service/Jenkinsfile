@@ -5,16 +5,6 @@ pipeline {
 apiVersion: v1
 kind: Pod
 spec:
-  initContainers:
-  - name: wait-for-docker
-    image: docker:24.0.5-cli
-    command: ['sh', '-c', 'until docker info > /dev/null 2>&1; do echo waiting for docker; sleep 2; done']
-    env:
-    - name: DOCKER_HOST
-      value: unix:///var/run/docker.sock
-    volumeMounts:
-    - name: docker-sock
-      mountPath: /var/run
   containers:
   - name: jnlp
     image: jenkins/inbound-agent:latest
@@ -56,6 +46,12 @@ spec:
         container('gradle') {
           sh '''
             apk add --no-cache docker-cli
+            echo "Esperando a que Docker este listo..."
+            until docker info > /dev/null 2>&1; do
+              echo "Docker aun no responde, reintentando en 2s..."
+              sleep 2
+            done
+            echo "Docker listo."
             ./gradlew :services:circleguard-promotion-service:test --info
           '''
         }
