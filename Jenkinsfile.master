@@ -1,0 +1,168 @@
+pipeline {
+  agent any
+  environment {
+    RELEASE_VERSION = "1.${BUILD_NUMBER}"
+    NAMESPACE_STAGE  = 'circle-guard-stage'
+    NAMESPACE_MASTER = 'circle-guard-master'
+  }
+  stages {
+
+    stage('Checkout') {
+      steps { checkout scm }
+    }
+
+    stage('Unit Tests - Todos los servicios') {
+      parallel {
+        stage('auth-service') {
+          steps { sh './gradlew :services:circleguard-auth-service:test' }
+          post { always { junit '**/circleguard-auth-service/build/test-results/test/*.xml' }}
+        }
+        stage('gateway-service') {
+          steps { sh './gradlew :services:circleguard-gateway-service:test' }
+          post { always { junit '**/circleguard-gateway-service/build/test-results/test/*.xml' }}
+        }
+        stage('identity-service') {
+          steps { sh './gradlew :services:circleguard-identity-service:test' }
+          post { always { junit '**/circleguard-identity-service/build/test-results/test/*.xml' }}
+        }
+        stage('promotion-service') {
+          steps { sh './gradlew :services:circleguard-promotion-service:test' }
+          post { always { junit '**/circleguard-promotion-service/build/test-results/test/*.xml' }}
+        }
+        stage('form-service') {
+          steps { sh './gradlew :services:circleguard-form-service:test' }
+          post { always { junit '**/circleguard-form-service/build/test-results/test/*.xml' }}
+        }
+        stage('notification-service') {
+          steps { sh './gradlew :services:circleguard-notification-service:test' }
+          post { always { junit '**/circleguard-notification-service/build/test-results/test/*.xml' }}
+        }
+      }
+    }
+
+    stage('Build JARs') {
+      steps {
+        sh './gradlew :services:circleguard-auth-service:bootJar -x test'
+        sh './gradlew :services:circleguard-gateway-service:bootJar -x test'
+        sh './gradlew :services:circleguard-identity-service:bootJar -x test'
+        sh './gradlew :services:circleguard-promotion-service:bootJar -x test'
+        sh './gradlew :services:circleguard-form-service:bootJar -x test'
+        sh './gradlew :services:circleguard-notification-service:bootJar -x test'
+      }
+    }
+
+    stage('Build & Push Docker Images') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials',
+          usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+          sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
+          sh """
+            for svc in auth gateway identity promotion form notification; do
+              docker build -t julianmotta07/circle-guard-\${svc}:${RELEASE_VERSION} \\
+                -f services/circleguard-\${svc}-service/Dockerfile .
+              docker push julianmotta07/circle-guard-\${svc}:${RELEASE_VERSION}
+            done
+          """
+        }
+      }
+    }
+
+    stage('Deploy to STAGE') {
+      steps {
+        sh 'kubectl apply -f k8s/infrastructure/ -n $NAMESPACE_STAGE'
+        sh 'sleep 30'
+        sh """
+          kubectl set image deployment/auth-service auth-service=julianmotta07/circle-guard-auth:${RELEASE_VERSION} -n $NAMESPACE_STAGE
+          kubectl set image deployment/gateway-service gateway-service=julianmotta07/circle-guard-gateway:${RELEASE_VERSION} -n $NAMESPACE_STAGE
+          kubectl set image deployment/identity-service identity-service=julianmotta07/circle-guard-identity:${RELEASE_VERSION} -n $NAMESPACE_STAGE
+          kubectl set image deployment/promotion-service promotion-service=julianmotta07/circle-guard-promotion:${RELEASE_VERSION} -n $NAMESPACE_STAGE
+          kubectl set image deployment/form-service form-service=julianmotta07/circle-guard-form:${RELEASE_VERSION} -n $NAMESPACE_STAGE
+          kubectl set image deployment/notification-service notification-service=julianmotta07/circle-guard-notification:${RELEASE_VERSION} -n $NAMESPACE_STAGE
+        """
+        sh 'kubectl rollout status deployment/auth-service -n $NAMESPACE_STAGE'
+        sh 'kubectl rollout status deployment/promotion-service -n $NAMESPACE_STAGE'
+      }
+    }
+
+    stage('System Tests en STAGE') {
+      steps {
+        sh './gradlew :services:circleguard-auth-service:test -Dspring.profiles.active=integration'
+        sh './gradlew :services:circleguard-promotion-service:test -Dspring.profiles.active=integration'
+      }
+      post { always {
+        junit '**/build/test-results/test/*.xml'
+      }}
+    }
+
+    stage('Generate Release Notes') {
+      steps {
+        sh """
+          PREV_TAG=\$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo 'v0.0')
+          echo '# Release Notes v${RELEASE_VERSION}' > RELEASE_NOTES.md
+          echo '' >> RELEASE_NOTES.md
+          echo "Fecha: \$(date)" >> RELEASE_NOTES.md
+          echo "Build: ${BUILD_NUMBER}" >> RELEASE_NOTES.md
+          echo '' >> RELEASE_NOTES.md
+          echo '## Cambios incluidos' >> RELEASE_NOTES.md
+          git log \${PREV_TAG}..HEAD --oneline --no-merges >> RELEASE_NOTES.md
+          echo '' >> RELEASE_NOTES.md
+          echo '## Microservicios desplegados' >> RELEASE_NOTES.md
+          echo '- julianmotta07/circle-guard-auth:${RELEASE_VERSION}' >> RELEASE_NOTES.md
+          echo '- julianmotta07/circle-guard-gateway:${RELEASE_VERSION}' >> RELEASE_NOTES.md
+          echo '- julianmotta07/circle-guard-identity:${RELEASE_VERSION}' >> RELEASE_NOTES.md
+          echo '- julianmotta07/circle-guard-promotion:${RELEASE_VERSION}' >> RELEASE_NOTES.md
+          echo '- julianmotta07/circle-guard-form:${RELEASE_VERSION}' >> RELEASE_NOTES.md
+          echo '- julianmotta07/circle-guard-notification:${RELEASE_VERSION}' >> RELEASE_NOTES.md
+        """
+        archiveArtifacts artifacts: 'RELEASE_NOTES.md'
+      }
+    }
+
+    stage('Aprobar deploy a MASTER') {
+      steps {
+        input message: "¿Confirmar deploy v${RELEASE_VERSION} a PRODUCCIÓN?", ok: 'Desplegar'
+      }
+    }
+
+    stage('Deploy to MASTER') {
+      steps {
+        sh 'kubectl apply -f k8s/infrastructure/ -n $NAMESPACE_MASTER'
+        sh 'sleep 30'
+        sh """
+          kubectl set image deployment/auth-service auth-service=julianmotta07/circle-guard-auth:${RELEASE_VERSION} -n $NAMESPACE_MASTER
+          kubectl set image deployment/gateway-service gateway-service=julianmotta07/circle-guard-gateway:${RELEASE_VERSION} -n $NAMESPACE_MASTER
+          kubectl set image deployment/identity-service identity-service=julianmotta07/circle-guard-identity:${RELEASE_VERSION} -n $NAMESPACE_MASTER
+          kubectl set image deployment/promotion-service promotion-service=julianmotta07/circle-guard-promotion:${RELEASE_VERSION} -n $NAMESPACE_MASTER
+          kubectl set image deployment/form-service form-service=julianmotta07/circle-guard-form:${RELEASE_VERSION} -n $NAMESPACE_MASTER
+          kubectl set image deployment/notification-service notification-service=julianmotta07/circle-guard-notification:${RELEASE_VERSION} -n $NAMESPACE_MASTER
+        """
+        sh 'kubectl rollout status deployment/auth-service -n $NAMESPACE_MASTER'
+        sh 'kubectl rollout status deployment/gateway-service -n $NAMESPACE_MASTER'
+        sh 'kubectl rollout status deployment/promotion-service -n $NAMESPACE_MASTER'
+      }
+    }
+
+    stage('Tag Release') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'github-credentials',
+          usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
+          sh """
+            git config user.email "ci@circleguard.com"
+            git config user.name "Jenkins CI"
+            git tag v${RELEASE_VERSION}
+            git push https://\${GIT_USER}:\${GIT_PASS}@github.com/julianmotta07/circle-guard-public.git v${RELEASE_VERSION}
+          """
+        }
+      }
+    }
+
+  }
+  post {
+    success {
+      echo "Release v${RELEASE_VERSION} desplegada exitosamente en MASTER"
+    }
+    failure {
+      echo "Pipeline MASTER fallido en Release v${RELEASE_VERSION}"
+    }
+  }
+}
